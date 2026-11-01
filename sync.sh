@@ -151,6 +151,24 @@ exists() { [ -e "$1" ] || [ -L "$1" ]; }
 
 dir_size() { du -sh "$1" 2>/dev/null | awk '{print $1}' || echo "?"; }
 
+# 从 https / ssh / 本地路径里抠出 owner/repo，用来判断这个配置目录是不是本仓库
+repo_slug() {
+  printf '%s\n' "$1" |
+    sed -E 's#^[A-Za-z+]+://##' |
+    sed -E 's#^[^@/]+@[^:/]+:##' |
+    sed -E 's#/+$##' |
+    sed -E 's#\.git$##' |
+    awk -F/ 'NF >= 2 { print $(NF - 1) "/" $NF; exit }'
+}
+
+is_our_config_repo() {
+  [ -d "$CONFIG_DIR/.git" ] || return 1
+  local url
+  url="$(git -C "$CONFIG_DIR" remote get-url origin 2>/dev/null || true)"
+  [ -n "$url" ] || return 1
+  [ "$(repo_slug "$url")" = "$(repo_slug "$REPO_URL")" ]
+}
+
 # ---------------------------------------------------------------- 0. 环境
 
 step "0/6 环境检查"
@@ -235,14 +253,14 @@ fi
 
 if [ "$KEEP_CONFIG" = 1 ]; then
   info "保留配置：$CONFIG_DIR 不动（--keep-config）"
-elif exists "$CONFIG_DIR"; then
-  if [ "$HARD" = 1 ]; then
-    info "删除  $CONFIG_DIR  （--hard，不备份）"
-  else
-    info "备份  $CONFIG_DIR  →  $CONFIG_DIR.bak.$(date +%Y%m%d-%H%M%S)"
-  fi
-else
+elif ! exists "$CONFIG_DIR"; then
   info "配置目录不存在，等下直接 clone"
+elif is_our_config_repo; then
+  info "配置已经是本仓库的 git 工作区，不用备份，等下 git pull"
+elif [ "$HARD" = 1 ]; then
+  info "删除  $CONFIG_DIR  （--hard，不备份）"
+else
+  info "备份  $CONFIG_DIR  →  $CONFIG_DIR.bak.$(date +%Y%m%d-%H%M%S)"
 fi
 
 BACKUP=""
@@ -263,6 +281,8 @@ if [ "$KEEP_CONFIG" = 1 ]; then
   info "跳过（--keep-config）"
 elif ! exists "$CONFIG_DIR"; then
   info "跳过（没有旧配置）"
+elif is_our_config_repo; then
+  info "跳过（已经是本仓库的工作区，git pull 就够了）"
 elif [ "$HARD" = 1 ]; then
   info "跳过（--hard）"
 elif [ "$DRY_RUN" = 1 ]; then
@@ -300,15 +320,15 @@ fi
 
 step "4/6 部署配置到 $CONFIG_DIR"
 
-if [ "$KEEP_CONFIG" = 1 ] && [ ! -d "$CONFIG_DIR/.git" ]; then
+if [ "$KEEP_CONFIG" = 1 ] && ! is_our_config_repo; then
   # --keep-config 的语义是「配置别动」，那就真的别动：不是 git 工作区就到此为止
   if exists "$CONFIG_DIR"; then
-    warn "$CONFIG_DIR 不是 git 工作区，--keep-config 下配置保持原样（插件已经洗过了）"
+    warn "$CONFIG_DIR 不是本仓库的 git 工作区，--keep-config 下配置保持原样（插件已经洗过了）"
     warn "想换成仓库里的配置，去掉 --keep-config 再跑一次"
   else
     die "--keep-config 但 $CONFIG_DIR 根本不存在，没配置可留；去掉这个参数"
   fi
-elif [ -d "$CONFIG_DIR/.git" ]; then
+elif is_our_config_repo; then
   info "已经是本仓库的 git 工作区，按更新处理"
   if [ "$DRY_RUN" = 0 ] && [ -n "$(git -C "$CONFIG_DIR" status --porcelain 2>/dev/null || true)" ]; then
     warn "本地有未提交的改动，跳过 git pull（先 commit 或 stash 再来）"
@@ -318,9 +338,20 @@ elif [ -d "$CONFIG_DIR/.git" ]; then
   fi
   ok "配置：$(git -C "$CONFIG_DIR" log -1 --oneline 2>/dev/null || echo '?')"
 elif exists "$CONFIG_DIR"; then
-  # 走到这里说明还留着旧配置（dry-run，或者中途冒出来的目录），备份后再 clone
+  # 走到这里说明还留着旧配置（--hard，或者 dry-run 没提前备份）
   if [ "$DRY_RUN" = 1 ]; then
-    info "[dry-run] rm -rf $CONFIG_DIR && git clone --branch $BRANCH $REPO_URL $CONFIG_DIR"
+    if [ "$HARD" = 1 ]; then
+      info "[dry-run] rm -rf $CONFIG_DIR（--hard）"
+    else
+      info "[dry-run] mv $CONFIG_DIR $CONFIG_DIR.bak.时间戳"
+    fi
+    info "[dry-run] git clone --branch $BRANCH $REPO_URL $CONFIG_DIR"
+  elif [ "$HARD" = 1 ]; then
+    rm -rf -- "$CONFIG_DIR"
+    if ! git clone --branch "$BRANCH" "$REPO_URL" "$CONFIG_DIR"; then
+      die "克隆失败：$REPO_URL（检查网络/代理，私有仓库先配好 git 凭据）"
+    fi
+    ok "配置就位（旧配置按 --hard 已删除）"
   else
     mv "$CONFIG_DIR" "$CONFIG_DIR.bak.$(date +%Y%m%d-%H%M%S)"
     ok "旧配置已备份"
