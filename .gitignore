@@ -1,0 +1,15 @@
+# 临时诊断文件（不属于配置本身）
+diag_*.txt
+diag_*.lua
+
+# 各类工具留下的状态目录
+.omc/
+.undo/
+.swap/
+
+# macOS
+.DS_Store
+._*
+
+# 注意：lazy-lock.json 不再忽略 —— 它会进仓库，
+# 这样 macOS 装机时能装到跟当前机器完全同一批 commit 的插件。
