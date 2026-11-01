@@ -21,6 +21,34 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HaiX1nG/nvim/main/install.sh
 > 国内网络：`raw.githubusercontent.com` 经常连不上，那就走上面 `git clone` 那条，
 > 或者给 brew / git 挂好代理再来。插件是从 GitHub 拉的，同理。
 
+## 从 LazyVim 换过来 / 插件乱掉了
+
+机器上以前装过 LazyVim 或者别的配置，插件目录里堆着半新半旧的 commit，
+直接换配置八成会报错。那就先洗一遍：
+
+```
+bash sync.sh
+```
+
+它干的事：确认 nvim 退出之后，把旧配置改名备份，删掉
+`~/.local/share/nvim`、`~/.local/state/nvim`、`~/.cache/nvim`
+（LazyVim 留下的 `~/.config/lazyvim`、`~/.local/{share,state}/lazyvim`、
+`~/.cache/lazyvim` 一起带走），重新 clone 本仓库，再按 `lazy-lock.json`
+把插件和 treesitter 解析器同步回来。
+
+| 参数 | 作用 |
+| --- | --- |
+| `--dry-run` | 只列清单，不动手 |
+| `--yes` | 不问，直接干 |
+| `--keep-config` | 只洗插件，`~/.config/nvim` 不动，完了 `git pull` |
+| `--hard` | 旧配置也不备份，直接删 |
+| `--with-tools` | 顺手把 mason 的 LSP / 格式化工具装好 |
+| `--kill` | nvim 还开着就帮你关（默认让你自己关） |
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/HaiX1nG/nvim/main/sync.sh) --yes
+```
+
 ## 这套配置里有什么
 
 **观感**
@@ -89,7 +117,8 @@ Mason 装的 LSP / 格式化工具在 `~/.local/share/nvim/mason`，
 
 ```
 init.lua              # 入口：bootstrap lazy、加载主题缓存、require 各模块
-install.sh            # macOS 一键安装
+install.sh            # macOS 一键安装（从零到能用）
+sync.sh               # macOS 一键重置：洗掉旧插件 + LazyVim 残留，换回本配置
 lazy-lock.json        # 插件版本锁（跟着仓库走，换机装到同一批 commit）
 lua/
 ├── chadrc.lua        # 主题、状态栏模块顺序、自定义 lsp 模块
@@ -144,6 +173,9 @@ cd ~/.config/nvim && git pull
 配置是纯文件，删了就没了；插件数据在 `~/.local/share/nvim`、
 状态在 `~/.local/state/nvim`、缓存 `~/.cache/nvim`，三个目录一起删就干净了。
 装的时候会自动备份旧配置到 `~/.config/nvim.bak.时间戳`，想回退改名回来即可。
+
+图省事就 `bash sync.sh --hard`：它会把上面这些连同 LazyVim 的残留一起删掉，
+`--hard` 的意思是旧配置也不留备份。
 
 ## 说明
 
