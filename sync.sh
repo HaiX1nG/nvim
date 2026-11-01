@@ -320,6 +320,23 @@ fi
 
 step "4/6 部署配置到 $CONFIG_DIR"
 
+# 网络抖一下就重来，最多三次；半截目录先清掉，不然下次 clone 会抱怨目录非空
+clone_config() {
+  local tries=0
+  while [ "$tries" -lt 3 ]; do
+    tries=$((tries + 1))
+    if git clone --branch "$BRANCH" "$REPO_URL" "$CONFIG_DIR"; then
+      return 0
+    fi
+    if [ "$tries" -lt 3 ]; then
+      warn "第 $tries 次克隆失败，5 秒后重试（国内网络常见，别急）"
+      if safe_target "$CONFIG_DIR"; then rm -rf -- "$CONFIG_DIR"; fi
+      sleep 5
+    fi
+  done
+  return 1
+}
+
 if [ "$KEEP_CONFIG" = 1 ] && ! is_our_config_repo; then
   # --keep-config 的语义是「配置别动」，那就真的别动：不是 git 工作区就到此为止
   if exists "$CONFIG_DIR"; then
@@ -347,22 +364,25 @@ elif exists "$CONFIG_DIR"; then
     fi
     info "[dry-run] git clone --branch $BRANCH $REPO_URL $CONFIG_DIR"
   elif [ "$HARD" = 1 ]; then
+    safe_target "$CONFIG_DIR" || die "路径看着不对，不敢删：$CONFIG_DIR"
     rm -rf -- "$CONFIG_DIR"
-    if ! git clone --branch "$BRANCH" "$REPO_URL" "$CONFIG_DIR"; then
+    if ! clone_config; then
       die "克隆失败：$REPO_URL（检查网络/代理，私有仓库先配好 git 凭据）"
     fi
     ok "配置就位（旧配置按 --hard 已删除）"
   else
     mv "$CONFIG_DIR" "$CONFIG_DIR.bak.$(date +%Y%m%d-%H%M%S)"
     ok "旧配置已备份"
-    if ! git clone --branch "$BRANCH" "$REPO_URL" "$CONFIG_DIR"; then
+    if ! clone_config; then
       die "克隆失败：$REPO_URL（检查网络/代理，私有仓库先配好 git 凭据）"
     fi
     ok "配置就位"
   fi
+elif [ "$DRY_RUN" = 1 ]; then
+  info "[dry-run] git clone --branch $BRANCH $REPO_URL $CONFIG_DIR"
 else
-  run git clone --branch "$BRANCH" "$REPO_URL" "$CONFIG_DIR" || die "克隆失败：$REPO_URL"
-  [ "$DRY_RUN" = 1 ] || ok "配置就位"
+  clone_config || die "克隆失败：$REPO_URL（检查网络/代理，私有仓库先配好 git 凭据）"
+  ok "配置就位"
 fi
 
 # ---------------------------------------------------------------- 5. 插件
