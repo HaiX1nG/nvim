@@ -18,6 +18,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HaiX1nG/nvim/main/install.sh
 备份旧配置到 `nvim.bak.时间戳`，再同步插件和 treesitter 解析器。
 `--dry-run` 可以先看它打算干什么，`--with-tools` 会把 LSP 也一起装好。
 
+> 国内网络：`raw.githubusercontent.com` 经常连不上，那就走上面 `git clone` 那条，
+> 或者给 brew / git 挂好代理再来。插件是从 GitHub 拉的，同理。
+
 ## 这套配置里有什么
 
 **观感**
@@ -106,6 +109,26 @@ lua/
     ├── init.lua        # 插件清单
     └── smear_cursor.lua
 ```
+
+## 常见问题
+
+**图标全是方块** —— 字体没选对。终端设置里把字体换成 `JetBrainsMono Nerd Font`。
+
+**第一次打开半天没动静** —— 在装东西。mason 的 LSP 是后台装的，` :Mason ` 能看到进度。
+
+**报 `No highlight group 'IblChar' found`（indent-blankline）**
+第一次启动时 base46 的主题缓存还没生成，重开一次 nvim 就好。
+`install.sh` 里已经加了一次预热启动，正常情况下碰不到。
+
+**`:StyleCheck` 说粗体/斜体没生效**
+多半是主题缓存和装载顺序的问题，`:Lazy sync` 后重开 nvim 再看；
+还不行就 `:lua require("configs.style").apply()` 手动套一次。
+
+**终端里颜色发灰、没有真彩色**
+`echo $COLORTERM` 应该是 `truecolor`；Terminal.app 需要换掉（iTerm2 / kitty / Ghostty 都行）。
+
+**`curl` 那行装不动**
+`raw.githubusercontent.com` 被墙了，用 `git clone` 那条路，或者挂好代理。
 
 ## 更新
 

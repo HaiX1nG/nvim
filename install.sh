@@ -199,7 +199,7 @@ step "2/7 安装依赖（neovim / ripgrep / node …）"
 # git      : lazy.nvim 拉插件
 # ripgrep  : telescope 全文搜索
 # fd       : telescope 找文件
-# lazygit  : <leader>gg 图形化 git（可选，装上不亏）
+# lazygit  : 终端里的 git TUI（可选，平时用得上的话挺爽）
 # node     : pyright / ts / prettier 这些 mason 包要 node
 # python   : python3 provider + 部分 mason 工具
 # tree-sitter-cli : nvim-treesitter 新分支编译解析器要用
@@ -282,17 +282,25 @@ else
   else
     ok "插件同步完成"
   fi
+  # 预热一次：base46 的主题缓存是这次同步里才生成的，
+  # 不重开一次的话，indent-blankline 会在 setup 时找不到 IblChar 高亮组而报错
+  run "$NVIM_BIN" --headless "+qa" </dev/null >/dev/null 2>&1 || true
 fi
 
 # ---------------------------------------------------------------- 6. 解析器
 
 step "6/7 编译 treesitter 解析器"
 
-PARSERS="rust go lua vim vimdoc luadoc json yaml html css javascript typescript toml bash python markdown markdown_inline"
+# 注意：:TSInstall 是异步的。`nvim --headless "+TSInstall! x" +qa` 会在下载
+# 还没跑完时就退出 —— 看起来 exit 0，其实一个 parser 都没装上（实测踩过）。
+# 所以这里用 install():wait() 阻塞到真的编译安装完。
+PARSERS_LUA='{ "rust", "go", "lua", "vim", "vimdoc", "luadoc", "json", "yaml", "html", "css", "javascript", "typescript", "toml", "bash", "python", "markdown", "markdown_inline" }'
 
 if [ "$SKIP_PLUGINS" = 1 ]; then
   info "跳过（--skip-plugins）"
-elif ! run "$NVIM_BIN" --headless "+TSInstall! $PARSERS" "+qa" </dev/null; then
+elif ! run "$NVIM_BIN" --headless \
+  -c "lua require('nvim-treesitter').install($PARSERS_LUA, { max_jobs = 4 }):wait(900000)" \
+  -c "qa!" </dev/null; then
   warn "解析器编译有报错；打开 nvim 后 :TSInstall 可以补"
 else
   ok "解析器就绪"
@@ -304,7 +312,13 @@ step "7/7 LSP / 格式化工具（mason）"
 
 if [ "$WITH_TOOLS" = 1 ]; then
   info "同步安装 lua-ls / pyright / rust-analyzer / prettier …（慢，几分钟）"
-  if ! run "$NVIM_BIN" --headless "+MasonToolsInstallSync" "+qa" </dev/null; then
+  # 这个插件是 event = "VimEnter" 懒加载的，headless 下 `+MasonToolsInstallSync`
+  # 会在命令还没定义时就被执行（E492）。先手动 load 一次，命令才在。
+  # MasonToolsInstallSync 本身是阻塞的，会等到全部装完。
+  if ! run "$NVIM_BIN" --headless \
+    -c "lua require('lazy').load({ plugins = { 'mason-tool-installer.nvim' } })" \
+    -c "MasonToolsInstallSync" \
+    -c "qa!" </dev/null; then
     warn "mason 安装有报错，之后打开 nvim 会自动重试（配置里开了 run_on_start）"
   else
     ok "工具装好了"
